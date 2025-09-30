@@ -33,7 +33,7 @@
     const renderer = new THREE.WebGLRenderer({canvas: canvasElement, alpha: true});
     renderer.setSize(window.innerWidth, window.innerHeight);
 
-    // Lighting for sunglasses
+    // Lighting
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(0, 0, 2).normalize();
     scene.add(light);
@@ -41,11 +41,21 @@
     // Load sunglasses model
     const loader = new THREE.GLTFLoader();
     let sunglasses;
-    loader.load('sunglasses.glb', gltf => {
-      sunglasses = gltf.scene;
-      sunglasses.scale.set(0.1, 0.1, 0.1); // start small
-      scene.add(sunglasses);
-    });
+    let modelLoaded = false;
+    loader.load(
+      'sunglasses.glb',
+      gltf => {
+        sunglasses = gltf.scene;
+        sunglasses.scale.set(0.1, 0.1, 0.1);
+        scene.add(sunglasses);
+        modelLoaded = true;
+        console.log("✅ Model loaded");
+      },
+      undefined,
+      err => {
+        console.error("❌ Could not load model:", err);
+      }
+    );
 
     camera.position.z = 2;
 
@@ -64,28 +74,36 @@
     faceMesh.onResults(results => {
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-      if (!results.multiFaceLandmarks[0] || !sunglasses) return;
-      const landmarks = results.multiFaceLandmarks[0];
+      if (!modelLoaded) {
+        canvasCtx.fillStyle = "white";
+        canvasCtx.font = "20px sans-serif";
+        canvasCtx.fillText("Model not loaded…", 20, 40);
+        return;
+      }
 
-      // Left & right eye corners
+      if (!results.multiFaceLandmarks[0]) {
+        canvasCtx.fillStyle = "white";
+        canvasCtx.font = "20px sans-serif";
+        canvasCtx.fillText("Face not detected…", 20, 40);
+        renderer.render(scene, camera);
+        return;
+      }
+
+      const landmarks = results.multiFaceLandmarks[0];
       const leftEye = landmarks[33];
       const rightEye = landmarks[263];
       const mid = [(leftEye.x + rightEye.x) / 2, (leftEye.y + rightEye.y) / 2];
 
-      // Distance between eyes → scaling factor
       const dx = rightEye.x - leftEye.x;
       const dy = rightEye.y - leftEye.y;
       const eyeDist = Math.sqrt(dx * dx + dy * dy);
-
-      // Angle of tilt
       const angle = Math.atan2(dy, dx);
 
-      // Position sunglasses (adjust offsets so they sit better)
       sunglasses.position.set(mid[0] - 0.5, -(mid[1] - 0.5), -1);
       sunglasses.rotation.set(0, 0, -angle);
       sunglasses.scale.set(eyeDist * 5, eyeDist * 5, eyeDist * 5);
 
-      // Debug: draw small circles on eye corners
+      // Debug dots
       canvasCtx.fillStyle = "red";
       [leftEye, rightEye].forEach(pt => {
         canvasCtx.beginPath();
@@ -97,12 +115,20 @@
     });
 
     // Camera input
-    const cameraInstance = new Camera(videoElement, {
-      onFrame: async () => { await faceMesh.send({image: videoElement}); },
-      width: 640,
-      height: 480
-    });
-    cameraInstance.start();
+    try {
+      const cameraInstance = new Camera(videoElement, {
+        onFrame: async () => { await faceMesh.send({image: videoElement}); },
+        width: 640,
+        height: 480
+      });
+      cameraInstance.start();
+      console.log("✅ Camera started");
+    } catch (e) {
+      console.error("❌ Camera failed:", e);
+      canvasCtx.fillStyle = "white";
+      canvasCtx.font = "20px sans-serif";
+      canvasCtx.fillText("Camera not available…", 20, 40);
+    }
 
     window.addEventListener('resize', () => {
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -110,7 +136,6 @@
       camera.updateProjectionMatrix();
     });
 
-    // Resize canvas to match video
     videoElement.addEventListener('loadeddata', () => {
       canvasElement.width = videoElement.videoWidth;
       canvasElement.height = videoElement.videoHeight;
