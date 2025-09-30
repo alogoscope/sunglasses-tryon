@@ -36,7 +36,7 @@
     // Load sunglasses model
     const loader = new THREE.GLTFLoader();
     let sunglasses;
-    loader.load('sunglasses.glb', gltf => {
+    loader.load('SpecGlossVsMetalRough.glb', gltf => {
       sunglasses = gltf.scene;
       sunglasses.scale.set(0.5, 0.5, 0.5);
       scene.add(sunglasses);
