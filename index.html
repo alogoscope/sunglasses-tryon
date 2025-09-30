@@ -5,7 +5,7 @@
   <title>Virtual Try-On Sunglasses</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; background: #000; }
     video { display: none; }
     canvas { position: fixed; top: 0; left: 0; }
   </style>
@@ -33,12 +33,17 @@
     const renderer = new THREE.WebGLRenderer({canvas: canvasElement, alpha: true});
     renderer.setSize(window.innerWidth, window.innerHeight);
 
+    // Lighting for sunglasses
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(0, 0, 2).normalize();
+    scene.add(light);
+
     // Load sunglasses model
     const loader = new THREE.GLTFLoader();
     let sunglasses;
-    loader.load('SpecGlossVsMetalRough.glb', gltf => {
+    loader.load('sunglasses.glb', gltf => {
       sunglasses = gltf.scene;
-      sunglasses.scale.set(0.5, 0.5, 0.5);
+      sunglasses.scale.set(0.1, 0.1, 0.1); // start small
       scene.add(sunglasses);
     });
 
@@ -57,20 +62,36 @@
     });
 
     faceMesh.onResults(results => {
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
       if (!results.multiFaceLandmarks[0] || !sunglasses) return;
       const landmarks = results.multiFaceLandmarks[0];
 
-      // Get eye positions (landmarks 33 and 263 = left & right eye corners)
+      // Left & right eye corners
       const leftEye = landmarks[33];
       const rightEye = landmarks[263];
+      const mid = [(leftEye.x + rightEye.x) / 2, (leftEye.y + rightEye.y) / 2];
 
-      const midX = (leftEye.x + rightEye.x) / 2;
-      const midY = (leftEye.y + rightEye.y) / 2;
-      const eyeDist = Math.abs(rightEye.x - leftEye.x);
+      // Distance between eyes → scaling factor
+      const dx = rightEye.x - leftEye.x;
+      const dy = rightEye.y - leftEye.y;
+      const eyeDist = Math.sqrt(dx * dx + dy * dy);
 
-      // Position & scale sunglasses
-      sunglasses.position.set(midX - 0.5, -(midY - 0.5), -1);
-      sunglasses.scale.set(eyeDist * 4, eyeDist * 4, eyeDist * 4);
+      // Angle of tilt
+      const angle = Math.atan2(dy, dx);
+
+      // Position sunglasses (adjust offsets so they sit better)
+      sunglasses.position.set(mid[0] - 0.5, -(mid[1] - 0.5), -1);
+      sunglasses.rotation.set(0, 0, -angle);
+      sunglasses.scale.set(eyeDist * 5, eyeDist * 5, eyeDist * 5);
+
+      // Debug: draw small circles on eye corners
+      canvasCtx.fillStyle = "red";
+      [leftEye, rightEye].forEach(pt => {
+        canvasCtx.beginPath();
+        canvasCtx.arc(pt.x * canvasElement.width, pt.y * canvasElement.height, 4, 0, 2 * Math.PI);
+        canvasCtx.fill();
+      });
 
       renderer.render(scene, camera);
     });
@@ -87,6 +108,12 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
+    });
+
+    // Resize canvas to match video
+    videoElement.addEventListener('loadeddata', () => {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
     });
   </script>
 </body>
