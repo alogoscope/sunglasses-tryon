@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Virtual Try-On Sunglasses</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { margin: 0; overflow: hidden; }
+    video { display: none; }
+    canvas { position: fixed; top: 0; left: 0; }
+  </style>
+
+  <!-- Three.js + GLTFLoader -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/GLTFLoader.js"></script>
+
+  <!-- MediaPipe FaceMesh -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/facemesh"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+</head>
+<body>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="output"></canvas>
+
+  <script>
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.getElementById('output');
+    const canvasCtx = canvasElement.getContext('2d');
+
+    // Setup Three.js
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({canvas: canvasElement, alpha: true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Load sunglasses model
+    const loader = new THREE.GLTFLoader();
+    let sunglasses;
+    loader.load('sunglasses.glb', gltf => {
+      sunglasses = gltf.scene;
+      sunglasses.scale.set(0.5, 0.5, 0.5);
+      scene.add(sunglasses);
+    });
+
+    camera.position.z = 2;
+
+    // Setup FaceMesh
+    const faceMesh = new FaceMesh.FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/facemesh/${file}`
+    });
+
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    faceMesh.onResults(results => {
+      if (!results.multiFaceLandmarks[0] || !sunglasses) return;
+      const landmarks = results.multiFaceLandmarks[0];
+
+      // Get eye positions (landmarks 33 and 263 = left & right eye corners)
+      const leftEye = landmarks[33];
+      const rightEye = landmarks[263];
+
+      const midX = (leftEye.x + rightEye.x) / 2;
+      const midY = (leftEye.y + rightEye.y) / 2;
+      const eyeDist = Math.abs(rightEye.x - leftEye.x);
+
+      // Position & scale sunglasses
+      sunglasses.position.set(midX - 0.5, -(midY - 0.5), -1);
+      sunglasses.scale.set(eyeDist * 4, eyeDist * 4, eyeDist * 4);
+
+      renderer.render(scene, camera);
+    });
+
+    // Camera input
+    const cameraInstance = new Camera(videoElement, {
+      onFrame: async () => { await faceMesh.send({image: videoElement}); },
+      width: 640,
+      height: 480
+    });
+    cameraInstance.start();
+
+    window.addEventListener('resize', () => {
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+    });
+  </script>
+</body>
+</html>
